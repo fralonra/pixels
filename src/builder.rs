@@ -3,15 +3,15 @@ use crate::{Error, Pixels, PixelsContext, SurfaceSize, SurfaceTexture, TextureEr
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 
 /// A builder to help create customized pixel buffers.
-pub struct PixelsBuilder<'req, 'dev, 'win, W: HasRawWindowHandle + HasRawDisplayHandle> {
-    request_adapter_options: Option<wgpu::RequestAdapterOptions<'req>>,
+pub struct PixelsBuilder<'req, 'dev, 'win, W: wgpu::WindowHandle> {
+    request_adapter_options: Option<wgpu::RequestAdapterOptions<'req, 'win>>,
     device_descriptor: Option<wgpu::DeviceDescriptor<'dev>>,
     backend: wgpu::Backends,
     width: u32,
     height: u32,
     _pixel_aspect_ratio: f64,
     present_mode: wgpu::PresentMode,
-    surface_texture: SurfaceTexture<'win, W>,
+    surface_texture: SurfaceTexture<W>,
     texture_format: wgpu::TextureFormat,
     render_texture_format: Option<wgpu::TextureFormat>,
     surface_texture_format: Option<wgpu::TextureFormat>,
@@ -19,19 +19,17 @@ pub struct PixelsBuilder<'req, 'dev, 'win, W: HasRawWindowHandle + HasRawDisplay
     blend_state: wgpu::BlendState,
 }
 
-impl<'req, 'dev, 'win, W: HasRawWindowHandle + HasRawDisplayHandle>
-    PixelsBuilder<'req, 'dev, 'win, W>
-{
+impl<'req, 'dev, 'win, W: wgpu::WindowHandle + 'win> PixelsBuilder<'req, 'dev, 'win, W> {
     /// Create a builder that can be finalized into a [`Pixels`] pixel buffer.
     ///
     /// # Examples
     ///
     /// ```no_run
-    /// use pixels::wgpu::{PowerPreference, RequestAdapterOptions};
+    /// use wgpu_pixels::wgpu::{PowerPreference, RequestAdapterOptions};
     ///
-    /// # use pixels::PixelsBuilder;
+    /// # use wgpu_pixels::PixelsBuilder;
     /// # let window = pixels_mocks::Rwh;
-    /// # let surface_texture = pixels::SurfaceTexture::new(256, 240, &window);
+    /// # let surface_texture = wgpu_pixels::SurfaceTexture::new(256, 240, &window);
     /// let mut pixels = PixelsBuilder::new(256, 240, surface_texture)
     ///     .request_adapter_options(RequestAdapterOptions {
     ///         power_preference: PowerPreference::HighPerformance,
@@ -40,13 +38,13 @@ impl<'req, 'dev, 'win, W: HasRawWindowHandle + HasRawDisplayHandle>
     ///     })
     ///     .enable_vsync(false)
     ///     .build()?;
-    /// # Ok::<(), pixels::Error>(())
+    /// # Ok::<(), wgpu_pixels::Error>(())
     /// ```
     ///
     /// # Panics
     ///
     /// Panics when `width` or `height` are 0.
-    pub fn new(width: u32, height: u32, surface_texture: SurfaceTexture<'win, W>) -> Self {
+    pub fn new(width: u32, height: u32, surface_texture: SurfaceTexture<W>) -> Self {
         assert!(width > 0);
         assert!(height > 0);
 
@@ -70,7 +68,7 @@ impl<'req, 'dev, 'win, W: HasRawWindowHandle + HasRawDisplayHandle>
     /// Add options for requesting a [`wgpu::Adapter`].
     pub fn request_adapter_options(
         mut self,
-        request_adapter_options: wgpu::RequestAdapterOptions<'req>,
+        request_adapter_options: wgpu::RequestAdapterOptions<'req, 'win>,
     ) -> Self {
         self.request_adapter_options = Some(request_adapter_options);
         self
@@ -190,16 +188,16 @@ impl<'req, 'dev, 'win, W: HasRawWindowHandle + HasRawDisplayHandle>
     /// The default blend state is alpha blending with non-premultiplied alpha.
     ///
     /// ```no_run
-    /// use pixels::wgpu::BlendState;
+    /// use wgpu_pixels::wgpu::BlendState;
     ///
-    /// # use pixels::PixelsBuilder;
+    /// # use wgpu_pixels::PixelsBuilder;
     /// # let window = pixels_mocks::Rwh;
-    /// # let surface_texture = pixels::SurfaceTexture::new(320, 240, &window);
+    /// # let surface_texture = wgpu_pixels::SurfaceTexture::new(320, 240, &window);
     /// // Replace the old pixels with the new without mixing.
     /// let mut pixels = PixelsBuilder::new(320, 240, surface_texture)
     ///     .blend_state(wgpu::BlendState::REPLACE)
     ///     .build()?;
-    /// # Ok::<(), pixels::Error>(())
+    /// # Ok::<(), wgpu_pixels::Error>(())
     /// ```
     pub fn blend_state(mut self, blend_state: wgpu::BlendState) -> Self {
         self.blend_state = blend_state;
@@ -214,11 +212,11 @@ impl<'req, 'dev, 'win, W: HasRawWindowHandle + HasRawDisplayHandle>
     /// The default value is pure black.
     ///
     /// ```no_run
-    /// use pixels::wgpu::Color;
+    /// use wgpu_pixels::wgpu::Color;
     ///
-    /// # use pixels::PixelsBuilder;
+    /// # use wgpu_pixels::PixelsBuilder;
     /// # let window = pixels_mocks::Rwh;
-    /// # let surface_texture = pixels::SurfaceTexture::new(320, 240, &window);
+    /// # let surface_texture = wgpu_pixels::SurfaceTexture::new(320, 240, &window);
     /// // Set clear color to bright magenta.
     /// let mut pixels = PixelsBuilder::new(320, 240, surface_texture)
     ///     .clear_color(Color {
@@ -228,7 +226,7 @@ impl<'req, 'dev, 'win, W: HasRawWindowHandle + HasRawDisplayHandle>
     ///         a: 1.0,
     ///     })
     ///     .build()?;
-    /// # Ok::<(), pixels::Error>(())
+    /// # Ok::<(), wgpu_pixels::Error>(())
     /// ```
     pub fn clear_color(mut self, color: wgpu::Color) -> Self {
         self.clear_color = color;
@@ -243,14 +241,14 @@ impl<'req, 'dev, 'win, W: HasRawWindowHandle + HasRawDisplayHandle>
     /// # Errors
     ///
     /// Returns an error when a [`wgpu::Adapter`] cannot be found.
-    async fn build_impl(self) -> Result<Pixels, Error> {
+    async fn build_impl(self) -> Result<Pixels<'win>, Error> {
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: self.backend,
             ..Default::default()
         });
 
         // TODO: Use `options.pixel_aspect_ratio` to stretch the scaled texture
-        let surface = unsafe { instance.create_surface(self.surface_texture.window) }?;
+        let surface = instance.create_surface(self.surface_texture.window)?;
         let compatible_surface = Some(&surface);
         let request_adapter_options = &self.request_adapter_options;
         let adapter = match wgpu::util::initialize_adapter_from_env(&instance, compatible_surface) {
@@ -279,7 +277,7 @@ impl<'req, 'dev, 'win, W: HasRawWindowHandle + HasRawDisplayHandle>
         let device_descriptor = self
             .device_descriptor
             .unwrap_or_else(|| wgpu::DeviceDescriptor {
-                limits: adapter.limits(),
+                required_limits: adapter.limits(),
                 ..wgpu::DeviceDescriptor::default()
             });
 
@@ -359,7 +357,7 @@ impl<'req, 'dev, 'win, W: HasRawWindowHandle + HasRawDisplayHandle>
     ///
     /// Returns an error when a [`wgpu::Adapter`] or [`wgpu::Device`] cannot be found.
     #[cfg(not(target_arch = "wasm32"))]
-    pub fn build(self) -> Result<Pixels, Error> {
+    pub fn build(self) -> Result<Pixels<'win>, Error> {
         pollster::block_on(self.build_impl())
     }
 
@@ -368,24 +366,24 @@ impl<'req, 'dev, 'win, W: HasRawWindowHandle + HasRawDisplayHandle>
     /// # Examples
     ///
     /// ```no_run
-    /// use pixels::wgpu::{Backends, DeviceDescriptor, Limits};
+    /// use wgpu_pixels::wgpu::{Backends, DeviceDescriptor, Limits};
     ///
-    /// # async fn test() -> Result<(), pixels::Error> {
-    /// # use pixels::PixelsBuilder;
+    /// # async fn test() -> Result<(), wgpu_pixels::Error> {
+    /// # use wgpu_pixels::PixelsBuilder;
     /// # let window = pixels_mocks::Rwh;
-    /// # let surface_texture = pixels::SurfaceTexture::new(256, 240, &window);
+    /// # let surface_texture = wgpu_pixels::SurfaceTexture::new(256, 240, &window);
     /// let mut pixels = PixelsBuilder::new(256, 240, surface_texture)
     ///     .enable_vsync(false)
     ///     .build_async()
     ///     .await?;
-    /// # Ok::<(), pixels::Error>(())
+    /// # Ok::<(), wgpu_pixels::Error>(())
     /// # }
     /// ```
     ///
     /// # Errors
     ///
     /// Returns an error when a [`wgpu::Adapter`] or [`wgpu::Device`] cannot be found.
-    pub async fn build_async(self) -> Result<Pixels, Error> {
+    pub async fn build_async(self) -> Result<Pixels<'win>, Error> {
         self.build_impl().await
     }
 }
@@ -624,6 +622,8 @@ const fn texture_format_size(texture_format: wgpu::TextureFormat) -> f32 {
         Astc { block: B12x10, channel: _ } => 7.5, // 12.0 * 10.0 / 16.0
 
         // 12x12 blocks, 16 bytes per block
-        Astc { block: B12x12, channel: _ } => 9.0, // 12.0 * 12.0 / 16.0
+        Astc { block: B12x12, channel: _ } => 9.0,
+        Rgb10a2Uint => todo!(),
+        NV12 => todo!(), // 12.0 * 12.0 / 16.0
     }
 }

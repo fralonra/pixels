@@ -143,6 +143,7 @@ impl ScalingRenderer {
             vertex: wgpu::VertexState {
                 module: &module,
                 entry_point: "vs_main",
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
                 buffers: &[vertex_buffer_layout],
             },
             primitive: wgpu::PrimitiveState::default(),
@@ -151,6 +152,7 @@ impl ScalingRenderer {
             fragment: Some(wgpu::FragmentState {
                 module: &module,
                 entry_point: "fs_main",
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
                 targets: &[Some(wgpu::ColorTargetState {
                     format: render_texture_format,
                     blend: Some(blend_state),
@@ -158,6 +160,7 @@ impl ScalingRenderer {
                 })],
             }),
             multiview: None,
+            cache: None,
         });
 
         // Create clipping rectangle
@@ -184,10 +187,12 @@ impl ScalingRenderer {
                 resolve_target: None,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Clear(self.clear_color),
-                    store: true,
+                    store: wgpu::StoreOp::Store,
                 },
             })],
             depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
         });
         rpass.set_pipeline(&self.render_pipeline);
         rpass.set_bind_group(0, &self.bind_group, &[]);
